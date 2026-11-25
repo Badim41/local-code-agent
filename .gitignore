@@ -17,3 +17,6 @@ secret.py
 .get_gpt_project/
 .replacer_backups/
 prompt_for_project.txt
+get_structure.py
+replacer.py
+
