@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Локальные конфиги и секреты (не коммитить!)
+agent_config.json
+projects.json
+.env
+secret.py
+.get_gpt_project/
+.replacer_backups/
+prompt_for_project.txt

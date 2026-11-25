@@ -1,0 +1,29 @@
+[
+  {
+    "id": "my-app",
+    "name": "My App",
+    "path": "C:/Projects/my-app",
+    "ignore_folders": [
+      "node_modules",
+      "__pycache__",
+      ".venv",
+      "venv",
+      "dist",
+      "build"
+    ],
+    "ignore_files": [
+      "secret.py",
+      "get_structure.py",
+      "replacer.py",
+      ".env"
+    ],
+    "model": "gemini-4-hydrogen",
+    "detail_level": 3,
+    "max_structure_chars": 60000,
+    "max_prompt_chars": 500000,
+    "use_git": true,
+    "allow_create_new_files": true,
+    "default_powershell_timeout": 120,
+    "max_powershell_timeout": 900
+  }
+]

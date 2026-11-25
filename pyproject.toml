@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-code-agent"
+version = "1.0.0"
+description = "Локальный HTTP-сервер (127.0.0.1:8091) для подключения кодовой базы, применения правок и запуска PowerShell из веб-чата."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "network_tools @ git+https://github.com/Badim41/network_tools.git",
+    "convert_gpt_answer @ git+https://github.com/Badim41/convert_gpt_answer.git",
+    "gpt_project_prompter @ git+https://github.com/Badim41/gpt_project_prompter.git",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+local-code-agent = "local_code_agent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["local_code_agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
