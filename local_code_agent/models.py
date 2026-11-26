@@ -32,6 +32,10 @@ DEFAULT_IGNORE_FILES: tuple[str, ...] = (
     "prompt_for_project.txt",
 )
 
+MAX_READ_FILES_TOTAL: int = 30
+MAX_READ_IMAGES_TOTAL: int = 10
+MAX_IMAGE_FILE_BYTES: int = 8 * 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectConfig:
@@ -114,19 +118,28 @@ class ProjectConfig:
 
 @dataclass(frozen=True, slots=True)
 class PendingShellCommand:
-    """Команда PowerShell, ожидающая подтверждения пользователя в чате."""
+    """Команда (PowerShell / Python), ожидающая подтверждения пользователя в чате."""
 
     id: str
     project_id: str
     script: str
     timeout_used: int
     created_at: float
+    steps: tuple[dict[str, str], ...] = ()
+    read_files: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Возвращает JSON-описание отложенной команды для UI чата."""
+        steps_list = (
+            list(self.steps)
+            if self.steps
+            else [{"kind": "powershell", "code": self.script}]
+        )
         return {
             "id": self.id,
             "project_id": self.project_id,
             "script": self.script,
+            "steps": steps_list,
+            "read_files": list(self.read_files),
             "timeout_used": self.timeout_used,
         }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from convert_gpt_answer.replacer import (
     EditsReport,
@@ -72,17 +73,7 @@ def build_edits_failed_feedback(
     return "\n".join(lines)
 
 
-def build_shell_feedback(
-    *,
-    script: str,
-    shell_report: ShellReport,
-    edits: EditsReport | None = None,
-    shell_changed_files: Sequence[str] = (),
-    max_output_chars: int = DEFAULT_MAX_SHELL_OUTPUT_CHARS,
-) -> str:
-    """Формирует отчёт для LLM с результатом выполнения PowerShell (с сокращением лога)."""
-    lines: list[str] = [FEEDBACK_MARKER]
-
+def _append_edits_summary(lines: list[str], edits: EditsReport | None) -> None:
     if edits is not None and edits.changes:
         mod = [c.path for c in edits.changes if c.kind == "modified"]
         crt = [c.path for c in edits.changes if c.kind == "created"]
@@ -91,23 +82,105 @@ def build_shell_feedback(
             f"создано: {len(crt)} ({', '.join(crt) or 'нет'})."
         )
 
+
+def _append_read_files_section(
+    lines: list[str],
+    read_files_report: dict[str, Any] | None,
+) -> None:
+    if not read_files_report:
+        return
+    added_text = read_files_report.get("added_text") or []
+    added_images = read_files_report.get("added_images") or []
+    errors = read_files_report.get("errors") or []
+    if not added_text and not added_images and not errors:
+        return
+
+    lines.append("[READ_FILES] Результат чтения запрошенных файлов:")
+    if added_text:
+        lines.append(
+            '- Текстовые файлы (доступны полностью в разделе "# Файлы" на весь текущий ход агента): '
+            + ", ".join(str(p) for p in added_text)
+        )
+    if added_images:
+        img_parts: list[str] = []
+        for item in added_images:
+            if isinstance(item, dict):
+                path = str(item.get("path", ""))
+                w, h = item.get("width"), item.get("height")
+                img_parts.append(f"{path} ({w}x{h})" if w and h else path)
+            else:
+                img_parts.append(str(item))
+        lines.append(
+            "- Изображения (прикреплены к запросу на весь текущий ход агента): "
+            + ", ".join(img_parts)
+        )
+    if errors:
+        lines.append("- Не удалось прочитать:")
+        for err in errors:
+            if isinstance(err, dict):
+                lines.append(f"  - {err.get('path', '?')}: {err.get('error', 'ошибка')}")
+            else:
+                lines.append(f"  - {err}")
+
+
+def _runner_tag(steps: Sequence[dict[str, str]]) -> tuple[str, str]:
+    kinds = {str(s.get("kind", "powershell")) for s in steps if isinstance(s, dict)}
+    if kinds == {"python"}:
+        return "PYTHON", "python"
+    if len(kinds) > 1:
+        return "SCRIPT", ""
+    return "POWERSHELL", "powershell"
+
+
+def build_read_files_feedback(
+    *,
+    read_files_report: dict[str, Any],
+    edits: EditsReport | None = None,
+) -> str:
+    """Формирует компактный отчёт для LLM о прочитанных через READ_FILES файлах и фото."""
+    lines: list[str] = [FEEDBACK_MARKER]
+    _append_edits_summary(lines, edits)
+    _append_read_files_section(lines, read_files_report)
+    lines.append(
+        "\nЗапрошенные файлы уже подгружены в контекст этого запроса. Продолжай выполнение задачи."
+    )
+    return "\n".join(lines)
+
+
+def build_shell_feedback(
+    *,
+    script: str,
+    shell_report: ShellReport,
+    edits: EditsReport | None = None,
+    shell_changed_files: Sequence[str] = (),
+    max_output_chars: int = DEFAULT_MAX_SHELL_OUTPUT_CHARS,
+    steps: Sequence[dict[str, str]] = (),
+    read_files_report: dict[str, Any] | None = None,
+) -> str:
+    """Формирует отчёт для LLM с результатом выполнения PowerShell/Python (с сокращением лога)."""
+    lines: list[str] = [FEEDBACK_MARKER]
+    _append_edits_summary(lines, edits)
+
+    runner_label, fence_lang = _runner_tag(steps)
     status_map = {
         ShellStatus.OK: "УСПЕХ",
         ShellStatus.FAILED: "ОШИБКА",
         ShellStatus.TIMEOUT: "ТАЙМАУТ",
-        ShellStatus.EXECUTABLE_NOT_FOUND: "POWERSHELL НЕ НАЙДЕН",
+        ShellStatus.EXECUTABLE_NOT_FOUND: f"{runner_label} НЕ НАЙДЕН",
     }
     label = status_map.get(shell_report.status, str(shell_report.status.value))
     lines.append(
-        f"[POWERSHELL {label}] exit_code={shell_report.exit_code}, "
+        f"[{runner_label} {label}] exit_code={shell_report.exit_code}, "
         f"duration={shell_report.duration_seconds:.2f}s"
     )
     if shell_changed_files:
         lines.append("Файлы, изменённые командой: " + ", ".join(shell_changed_files))
 
+    _append_read_files_section(lines, read_files_report)
+
     cmd_preview = truncate_log(script.strip(), 1500)
     fence = "`" * 3
-    lines.append(f"\nКоманда:\n{fence}powershell\n{cmd_preview}\n{fence}")
+    lines.append(f"\nКоманда:\n{fence}{fence_lang}\n{cmd_preview}\n{fence}")
 
     log_body = shell_report.log.strip()
     if log_body:
@@ -119,13 +192,23 @@ def build_shell_feedback(
     return "\n".join(lines)
 
 
-def build_shell_rejected_feedback(script: str) -> str:
-    """Формирует уведомление для LLM, если пользователь отклонил запуск PowerShell в чате."""
+def build_shell_rejected_feedback(
+    script: str,
+    *,
+    steps: Sequence[dict[str, str]] = (),
+    read_files_report: dict[str, Any] | None = None,
+) -> str:
+    """Формирует уведомление для LLM, если пользователь отклонил запуск скрипта в чате."""
+    runner_label, fence_lang = _runner_tag(steps)
     cmd_preview = truncate_log(script.strip(), 1500)
     fence = "`" * 3
-    return (
-        f"{FEEDBACK_MARKER}\n"
-        f"[POWERSHELL REJECTED] Пользователь отклонил выполнение следующей команды:\n"
-        f"{fence}powershell\n{cmd_preview}\n{fence}\n\n"
-        f"Не повторяй эту команду без явной просьбы пользователя и скорректируй дальнейшие действия."
+    lines: list[str] = [
+        FEEDBACK_MARKER,
+        f"[{runner_label} REJECTED] Пользователь отклонил выполнение следующей команды:",
+        f"{fence}{fence_lang}\n{cmd_preview}\n{fence}",
+    ]
+    _append_read_files_section(lines, read_files_report)
+    lines.append(
+        "\nНе повторяй эту команду без явной просьбы пользователя и скорректируй дальнейшие действия."
     )
+    return "\n".join(lines)

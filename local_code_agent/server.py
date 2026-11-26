@@ -150,6 +150,7 @@ class LocalAgentRequestHandler(BaseHTTPRequestHandler):
                 max_prompt_chars=_optional_int(body, "max_prompt_chars"),
                 force_refresh=bool(body.get("force_refresh", False)),
                 include_edit_instructions=bool(body.get("include_edit_instructions", False)),
+                extra_files=_optional_str_list(body, "extra_files"),
             )
             return HTTPStatus.OK, res
 
@@ -167,6 +168,8 @@ class LocalAgentRequestHandler(BaseHTTPRequestHandler):
                 api_key=api_key,
                 model=_optional_str(body, "model"),
                 mode=str(body.get("mode") or "gpt_prompt"),
+                extra_files=_optional_str_list(body, "extra_files"),
+                inspect_only=bool(body.get("inspect_only", False)),
             )
             return HTTPStatus.OK, res
 
@@ -184,6 +187,7 @@ class LocalAgentRequestHandler(BaseHTTPRequestHandler):
                 api_key=api_key,
                 model=_optional_str(body, "model"),
                 mode=str(body.get("mode") or "gpt_prompt"),
+                extra_files=_optional_str_list(body, "extra_files"),
             )
             return HTTPStatus.OK, res
 
@@ -204,6 +208,7 @@ class LocalAgentRequestHandler(BaseHTTPRequestHandler):
                 api_key=api_key,
                 model=_optional_str(body, "model"),
                 mode=str(body.get("mode") or "gpt_prompt"),
+                extra_files=_optional_str_list(body, "extra_files"),
             )
             return HTTPStatus.OK, res
 
@@ -304,3 +309,12 @@ def _optional_int(body: dict[str, Any], key: str) -> int | None:
     if isinstance(val, bool) or not isinstance(val, int):
         raise ServiceError(f"Поле '{key}' должно быть целым числом.", 400)
     return val
+
+
+def _optional_str_list(body: dict[str, Any], key: str) -> list[str] | None:
+    val = body.get(key)
+    if val is None:
+        return None
+    if not isinstance(val, list) or not all(isinstance(item, str) for item in val):
+        raise ServiceError(f"Поле '{key}' должно быть списком строк.", 400)
+    return [item for item in val if item.strip()]
